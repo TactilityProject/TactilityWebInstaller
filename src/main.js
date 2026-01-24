@@ -13,7 +13,7 @@ function getCdnUrl(version, path) {
     if (version === 'unstable') {
         version = 'snapshot';
     }
-    return `https://cdn.tactility.one/firmware/${version}/${path}`;
+    return `https://cdn.tactilityproject.org/firmware/${version}/${path}`;
 }
 
 function setManifest(device, version) {
