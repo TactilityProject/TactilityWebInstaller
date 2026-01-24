@@ -1,6 +1,6 @@
 # Tactility Web Installer
 
-This is the website front-end to for flashing ESP32 devices with [Tactility](https://github.com/ByteWelder/Tactility).
+This is the website front-end to for flashing ESP32 devices with [Tactility](https://github.com/TactilityProject/Tactility).
 
 # Development
 
