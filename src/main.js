@@ -83,22 +83,40 @@ function convertUTCDateToLocalDate(date) {
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
 }
 
+function updateVersionLabel(version, json) {
+    const option = $('#Version').find(`option[value="${version}"]`);
+    option.text(capitalize(version) + ' (' + json.version + ')');
+}
+
+const versionRequests = {};
+
+function fetchVersion(version) {
+    if (!(version in versionRequests)) {
+        versionRequests[version] = $.getJSON(getCdnUrl(version, 'index.json'))
+            .done(function(json) {
+                updateVersionLabel(version, json);
+            })
+            .fail(function() {
+                // Allow a retry on the next selection
+                delete versionRequests[version];
+            });
+    }
+    return versionRequests[version];
+}
+
 function selectVersion(version) {
-    let url = getCdnUrl(version, 'index.json');
-    $.getJSON(url)
+    fetchVersion(version)
         .done(function(json) {
+            if ($('#Version')[0].value !== version) {
+                return;
+            }
             let sorted_devices = json.devices.sort((a, b) => {
                 if (a.id < b.id) return -1;
                 if (a.id > b.id) return 1;
                 return 0;
             });
-            const versionElement = $('#Version');
             const versionDetailsElement = $('#VersionDetails');
-            
-            const name = capitalize(versionElement.find(":selected").val());
-            let improved_name = name + ' (' + json.version + ')';
-            versionElement.find(":selected").text(improved_name);
-            
+
             if ("created" in json) {
                 const created_date = new Date(json.created).toLocaleString();
                 versionDetailsElement.html('Built on ' + created_date + ' from git commit <a href="https://github.com/ByteWelder/Tactility/commit/' +
@@ -120,6 +138,9 @@ function selectVersion(version) {
             updateSelectionBoxVisibility();
         })
         .fail(function(jqxhr, textStatus, error) {
+            if ($('#Version')[0].value !== version) {
+                return;
+            }
             $('#Device').html('');
             addDevice('none', 'Failed to fetch device info', '');
             updateSelectionBoxVisibility();
@@ -156,6 +177,7 @@ $(document).ready(function() {
     }
     
     selectVersion('stable');
+    fetchVersion('unstable');
 });
 
 
