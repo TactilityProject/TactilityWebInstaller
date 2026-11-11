@@ -1,184 +1,341 @@
-import 'bootstrap';
 import 'esp-web-tools';
-import './scss/app.scss';
-
-window.application = null;
+import './app.css';
 
 import toolbarLogo from '../assets/images/toolbar-logo.svg';
 import '../assets/images/favicon.svg';
 
-NavbarImage.src = toolbarLogo;
+const VERSIONS = ['stable', 'unstable'];
+
+const $ = (id) => document.getElementById(id);
+
+const state = {
+    /** version name -> index.json content, or null when it failed to load */
+    indexes: {},
+    /** merged devices: { id, vendor, name, label, haystack, words, builds: { stable?, unstable? } } */
+    devices: [],
+    selectedId: null,
+    preferredVersion: 'unstable',
+    query: '',
+};
 
 function getCdnUrl(version, path) {
-    if (version === 'unstable') {
-        version = 'snapshot';
-    }
-    return `https://cdn.tactilityproject.org/firmware/${version}/${path}`;
+    const directory = version === 'unstable' ? 'snapshot' : version;
+    return `https://cdn.tactilityproject.org/firmware/${directory}/${path}`;
 }
 
-function setManifest(device, version) {
-    const installer = document.querySelector('esp-web-install-button');
-    installer.manifest = getCdnUrl(version, `${device.id}.json`);
-    console.log("Device updated")
+/** Lowercase and strip punctuation, so "tdeck" matches "T-Deck". */
+function squash(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function getMessage(device) {
-    let message = '';
-    let messages = [];
-    if (device.incubating) {
-        messages.push('⚠️ This is device is incubating. It is not fully implemented! ⚠️');
-    }
-    if (device.warningMessage !== null) {
-        messages.push('⚠️ ' + device.warningMessage + ' ⚠️');
-    }
-    if (device.infoMessage !== null) {
-        messages.push(device.infoMessage);
-    }
-    return messages.join('<br/><br/>');
-}
-
-function updateSelectionBoxVisibility() {
-    const versionSelect = $('#Version');
-    const versionMenu = $('#VersionMenu');
-    const deviceSelect = $('#Device');
-    const selectedDevice = deviceSelect[0].value;
-    const selectedVersion = versionSelect[0].value;
-    const installActualButton = $('#InstallActualButton');
-    const deviceInfo = $('#DeviceInfo');
-        
-    let is_device_selected = typeof(selectedDevice) !== 'undefined' && selectedDevice !== null && selectedDevice !== '' && selectedDevice !== 'none';
-    if (is_device_selected) {
-        let device = JSON.parse($('#Device').find('option:selected').attr('device'));
-        if (device.infoMessage !== null || device.warningMessage !== null || device.incubating) {
-            deviceInfo.removeClass('invisible');
-            deviceInfo.html(getMessage(device));
-        } else {
-            deviceInfo.addClass('invisible');
-            deviceInfo.html('');
+function fetchIndex(version) {
+    return fetch(getCdnUrl(version, 'index.json')).then((response) => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
-        setManifest(device, selectedVersion);
-        installActualButton.removeClass('invisible');
+        return response.json();
+    });
+}
+
+function mergeDevices() {
+    const byId = new Map();
+    for (const version of VERSIONS) {
+        const index = state.indexes[version];
+        if (!index) continue;
+        for (const build of index.devices) {
+            let device = byId.get(build.id);
+            if (!device) {
+                device = { id: build.id, builds: {} };
+                byId.set(build.id, device);
+            }
+            device.builds[version] = build;
+            // Later versions win, so naming follows the newest build
+            device.vendor = build.vendor;
+            device.name = build.name;
+        }
+    }
+
+    state.devices = [...byId.values()];
+    for (const device of state.devices) {
+        device.showVendor = device.vendor !== device.name;
+        device.label = device.showVendor ? `${device.vendor} ${device.name}` : device.name;
+        const text = `${device.label} ${device.id}`;
+        device.haystack = `${text.toLowerCase()} ${squash(text)}`;
+        device.words = device.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    }
+    state.devices.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
+}
+
+/**
+ * Whether the token can be split into pieces that are each the start of a word, in word order.
+ * Makes "m5paper" match "M5Stack PaperS3" and "tdeck" match "T-Deck".
+ */
+function matchesWordStarts(token, words, firstWord = 0) {
+    if (token === '') {
+        return true;
+    }
+    for (let i = firstWord; i < words.length; i++) {
+        const word = words[i];
+        // Pieces of a single character only count when they are the entire word, to limit noise
+        const minLength = Math.min(2, word.length);
+        for (let length = Math.min(word.length, token.length); length >= minLength; length--) {
+            if (word.startsWith(token.slice(0, length)) && matchesWordStarts(token.slice(length), words, i + 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function matchesToken(device, token) {
+    if (device.haystack.includes(token)) {
+        return true;
+    }
+    const squashed = squash(token);
+    return squashed !== '' && (device.haystack.includes(squashed) || matchesWordStarts(squashed, device.words));
+}
+
+function getFilteredDevices() {
+    const tokens = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) {
+        return state.devices;
+    }
+    return state.devices.filter((device) => tokens.every((token) => matchesToken(device, token)));
+}
+
+function getSelectedDevice() {
+    return state.devices.find((device) => device.id === state.selectedId) || null;
+}
+
+/** The version to show for a device: the preferred one, or whichever is available. */
+function getActiveVersion(device) {
+    if (device.builds[state.preferredVersion]) {
+        return state.preferredVersion;
+    }
+    return VERSIONS.find((version) => device.builds[version]);
+}
+
+function createBadge(text, kind) {
+    const badge = document.createElement('span');
+    badge.className = `badge badge-${kind}`;
+    badge.textContent = text;
+    return badge;
+}
+
+function renderDeviceList() {
+    const list = $('DeviceList');
+    const status = $('ListStatus');
+    const devices = getFilteredDevices();
+    list.replaceChildren();
+
+    for (const device of devices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'device';
+        button.dataset.id = device.id;
+        button.setAttribute('aria-pressed', String(device.id === state.selectedId));
+
+        const text = document.createElement('span');
+        text.className = 'device-text';
+        if (device.showVendor) {
+            const vendor = document.createElement('span');
+            vendor.className = 'device-vendor';
+            vendor.textContent = device.vendor;
+            text.append(vendor);
+        }
+        const name = document.createElement('span');
+        name.className = 'device-name';
+        name.textContent = device.name;
+        text.append(name);
+        button.append(text);
+
+        if (!device.builds.stable) {
+            button.append(createBadge('Unstable only', 'accent'));
+        } else if (!device.builds.unstable) {
+            button.append(createBadge('Stable only', 'muted'));
+        }
+        if (device.builds[getActiveVersion(device)].incubating) {
+            button.append(createBadge('Incubating', 'warning'));
+        }
+
+        const item = document.createElement('li');
+        item.append(button);
+        list.append(item);
+    }
+
+    if (state.devices.length === 0) {
+        return; // Loading or error state owns the status text
+    }
+    if (devices.length === 0) {
+        status.textContent = `No devices match “${state.query.trim()}”.`;
+    } else if (devices.length === state.devices.length) {
+        status.textContent = `${devices.length} supported devices`;
     } else {
-        installActualButton.addClass('invisible');
-        deviceInfo.addClass('invisible');
-        deviceInfo.html('');
+        status.textContent = `${devices.length} of ${state.devices.length} devices`;
     }
 }
 
-function addDevice(id, name, device) {
-    $('#Device').append(
-        $('<option></option>')
-            .attr('value', id)
-            .attr('device', device)
-            .text(name)
-    );
+function createNotice(html, kind) {
+    const notice = document.createElement('div');
+    notice.className = `notice notice-${kind}`;
+    // Messages come from our own CDN and contain markup such as <br/>
+    notice.innerHTML = html;
+    return notice;
 }
 
-function capitalize(text) {
-    return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function convertUTCDateToLocalDate(date) {
-    var d = new Date(Date.parse('6/29/2011 4:52:48 PM'));
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-}
-
-function updateVersionLabel(version, json) {
-    const option = $('#Version').find(`option[value="${version}"]`);
-    option.text(capitalize(version) + ' (' + json.version + ')');
-}
-
-const versionRequests = {};
-
-function fetchVersion(version) {
-    if (!(version in versionRequests)) {
-        versionRequests[version] = $.getJSON(getCdnUrl(version, 'index.json'))
-            .done(function(json) {
-                updateVersionLabel(version, json);
-            })
-            .fail(function() {
-                // Allow a retry on the next selection
-                delete versionRequests[version];
-            });
+function renderVersionLabels() {
+    for (const version of VERSIONS) {
+        const index = state.indexes[version];
+        document.querySelector(`[data-version-label="${version}"]`).textContent = index ? index.version : 'Unavailable';
     }
-    return versionRequests[version];
 }
 
-function selectVersion(version) {
-    fetchVersion(version)
-        .done(function(json) {
-            if ($('#Version')[0].value !== version) {
-                return;
-            }
-            let sorted_devices = json.devices.sort((a, b) => {
-                if (a.id < b.id) return -1;
-                if (a.id > b.id) return 1;
-                return 0;
-            });
-            const versionDetailsElement = $('#VersionDetails');
-
-            if ("created" in json) {
-                const created_date = new Date(json.created).toLocaleString();
-                versionDetailsElement.html('Built on ' + created_date + ' from git commit <a href="https://github.com/ByteWelder/Tactility/commit/' +
-                json.gitCommit + '">' + json.gitCommit.substring(0, 7) + '</a>');
-            } else {
-                versionDetailsElement.html('')
-            }
-            
-            $('#Device').html('');
-            addDevice('none', 'Select a device...', '');
-            sorted_devices.forEach(function(device) {
-                let device_name = device.name;
-                let should_prefix_vendor = device.name !== device.vendor;
-                if (should_prefix_vendor) {
-                    device_name = device.vendor + " " + device_name;
-                }
-                addDevice(device.id, device_name, JSON.stringify(device));
-            });
-            updateSelectionBoxVisibility();
-        })
-        .fail(function(jqxhr, textStatus, error) {
-            if ($('#Version')[0].value !== version) {
-                return;
-            }
-            $('#Device').html('');
-            addDevice('none', 'Failed to fetch device info', '');
-            updateSelectionBoxVisibility();
-        });
-}
-
-$(document).ready(function() {
-    const deviceSelect = $('#Device');
-    const versionSelect = $('#Version');
-    const installButton = document.querySelector('esp-web-install-button');
-    const installActualButton = $('#InstallActualButton');
-
-    updateSelectionBoxVisibility();
-
-    versionSelect.bind("change", function(event) {
-        deviceSelect[0].value = 'none';
-        selectVersion(versionSelect[0].value);
-    });
-    
-    deviceSelect.bind("change", function (event) {
-        updateSelectionBoxVisibility();
-    });
-
-    versionSelect.bind("change", function (event) {
-        updateSelectionBoxVisibility();
-    });
-
-    const deviceMenu = $("#DeviceMenu");
-    const isSupported = "serial" in navigator;
-    if (isSupported) {
-        deviceMenu.removeClass('invisible');
-    } else {
-        console.warn("No web serial");
+function renderDetails() {
+    const device = getSelectedDevice();
+    $('DetailsEmpty').hidden = device !== null;
+    $('DetailsContent').hidden = device === null;
+    if (device === null) {
+        return;
     }
-    
-    selectVersion('stable');
-    fetchVersion('unstable');
+
+    const version = getActiveVersion(device);
+    const build = device.builds[version];
+    const index = state.indexes[version];
+
+    $('SelectedVendor').textContent = device.showVendor ? device.vendor : '';
+    $('SelectedName').textContent = device.name;
+
+    for (const input of document.querySelectorAll('input[name="version"]')) {
+        const available = Boolean(device.builds[input.value]);
+        input.disabled = !available;
+        input.checked = input.value === version;
+        input.closest('.segment').title = available ? '' : `No ${input.value} build for this device`;
+    }
+
+    const details = $('VersionDetails');
+    details.replaceChildren();
+    if (index.created && index.gitCommit) {
+        const link = document.createElement('a');
+        link.href = `https://github.com/ByteWelder/Tactility/commit/${index.gitCommit}`;
+        link.textContent = index.gitCommit.substring(0, 7);
+        details.append(`Built on ${new Date(index.created).toLocaleString()} from commit `, link);
+    }
+
+    const info = $('DeviceInfo');
+    info.replaceChildren();
+    if (build.incubating) {
+        info.append(createNotice('This device is incubating. It is not fully implemented!', 'warning'));
+    }
+    if (build.warningMessage) {
+        info.append(createNotice(build.warningMessage, 'warning'));
+    }
+    if (build.infoMessage) {
+        info.append(createNotice(build.infoMessage, 'info'));
+    }
+
+    $('Installer').manifest = getCdnUrl(version, `${device.id}.json`);
+}
+
+function selectDevice(id) {
+    state.selectedId = id;
+    for (const button of document.querySelectorAll('.device')) {
+        button.setAttribute('aria-pressed', String(button.dataset.id === id));
+    }
+    renderDetails();
+    if (getHashDeviceId() !== id) {
+        // Replace rather than push, so browsing devices doesn't fill up the history
+        history.replaceState(null, '', `#${encodeURIComponent(id)}`);
+    }
+}
+
+function getHashDeviceId() {
+    try {
+        return decodeURIComponent(location.hash.slice(1));
+    } catch (error) {
+        return '';
+    }
+}
+
+/** Select the device from the URL, e.g. https://install.tactilityproject.org/#lilygo-tdeck */
+function selectDeviceFromHash() {
+    const id = getHashDeviceId();
+    if (id === state.selectedId || !state.devices.some((device) => device.id === id)) {
+        return;
+    }
+    if (!getFilteredDevices().some((device) => device.id === id)) {
+        // Don't leave the linked device hidden behind a search query
+        state.query = '';
+        $('Search').value = '';
+        renderDeviceList();
+    }
+    selectDevice(id);
+    const button = document.querySelector('.device[aria-pressed="true"]');
+    if (button) {
+        button.scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function showLoadError() {
+    const status = $('ListStatus');
+    status.textContent = 'Failed to fetch device info. ';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'button-link';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', load);
+    status.append(retry);
+}
+
+async function load() {
+    $('ListStatus').textContent = 'Loading devices…';
+    const results = await Promise.allSettled(VERSIONS.map(fetchIndex));
+    results.forEach((result, i) => {
+        state.indexes[VERSIONS[i]] = result.status === 'fulfilled' ? result.value : null;
+        if (result.status === 'rejected') {
+            console.warn(`Failed to fetch ${VERSIONS[i]} index`, result.reason);
+        }
+    });
+
+    mergeDevices();
+    renderVersionLabels();
+    if (state.devices.length === 0) {
+        showLoadError();
+    }
+    renderDeviceList();
+    renderDetails();
+    selectDeviceFromHash();
+}
+
+$('NavbarImage').src = toolbarLogo;
+$('UnsupportedNotice').hidden = 'serial' in navigator;
+
+$('Search').addEventListener('input', (event) => {
+    state.query = event.target.value;
+    renderDeviceList();
 });
 
+$('Search').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        const first = getFilteredDevices()[0];
+        if (first) {
+            selectDevice(first.id);
+        }
+    }
+});
 
+$('DeviceList').addEventListener('click', (event) => {
+    const button = event.target.closest('.device');
+    if (button) {
+        selectDevice(button.dataset.id);
+    }
+});
 
+$('VersionOptions').addEventListener('change', (event) => {
+    state.preferredVersion = event.target.value;
+    renderDeviceList();
+    renderDetails();
+});
+
+window.addEventListener('hashchange', selectDeviceFromHash);
+
+load();
