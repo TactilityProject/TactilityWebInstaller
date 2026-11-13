@@ -20,7 +20,10 @@ Building static files into `dist/`:
 npm run build
 ```
 
-Copy manually to `docs/` and perform git push to deploy,
+# Deployment
+
+Pushing to `main` builds the site and deploys it to GitHub Pages with the
+[Deploy workflow](.github/workflows/deploy.yml).
 
 # License
 

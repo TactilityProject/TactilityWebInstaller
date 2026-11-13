@@ -1,5 +1,5 @@
-import 'esp-web-tools';
 import './app.css';
+import { getUnsupportedReason, initInstallDialog, startInstall } from './install';
 
 import toolbarLogo from '../assets/images/toolbar-logo.svg';
 import '../assets/images/favicon.svg';
@@ -20,7 +20,8 @@ const state = {
 
 function getCdnUrl(version, path) {
     const directory = version === 'unstable' ? 'snapshot' : version;
-    return `https://cdn.tactilityproject.org/firmware/${directory}/${path}`;
+    // CDN_BASE_URL is injected by webpack: empty (dev server proxy) when serving
+    return `${CDN_BASE_URL}/firmware/${directory}/${path}`;
 }
 
 /** Lowercase and strip punctuation, so "tdeck" matches "T-Deck". */
@@ -232,8 +233,6 @@ function renderDetails() {
     if (build.infoMessage) {
         info.append(createNotice(build.infoMessage, 'info'));
     }
-
-    $('Installer').manifest = getCdnUrl(version, `${device.id}.json`);
 }
 
 function selectDevice(id) {
@@ -307,7 +306,24 @@ async function load() {
 }
 
 $('NavbarImage').src = toolbarLogo;
-$('UnsupportedNotice').hidden = 'serial' in navigator;
+const unsupportedReason = getUnsupportedReason();
+$('UnsupportedNotice').hidden = unsupportedReason !== 'browser';
+$('InsecureNotice').hidden = unsupportedReason !== 'insecure';
+$('InstallButton').disabled = unsupportedReason !== null;
+initInstallDialog();
+
+$('InstallButton').addEventListener('click', () => {
+    const device = getSelectedDevice();
+    if (device === null) {
+        return;
+    }
+    const version = getActiveVersion(device);
+    const label = `Tactility ${state.indexes[version].version} for ${device.label}`;
+    startInstall(getCdnUrl(version, `${device.id}.json`), label).catch((error) => {
+        console.error(error);
+        alert(`Failed to open the serial port: ${error.message}`);
+    });
+});
 
 $('Search').addEventListener('input', (event) => {
     state.query = event.target.value;

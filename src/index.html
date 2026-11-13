@@ -36,6 +36,10 @@
         or check the <a href="https://tactilityproject.org/#/installing">alternative install methods</a>.
     </div>
 
+    <div class="notice notice-warning" id="InsecureNotice" hidden>
+        Installing only works when this page is opened over HTTPS or on localhost.
+    </div>
+
     <div class="layout">
         <section class="card" id="Picker" aria-labelledby="PickerTitle">
             <h2 id="PickerTitle"><span class="step">1</span>Choose your device</h2>
@@ -85,15 +89,50 @@
 
                 <div id="DeviceInfo"></div>
 
-                <esp-web-install-button id="Installer">
-                    <button id="InstallActualButton" class="button-primary" slot="activate">Install now</button>
-                    <span slot="unsupported" class="install-fallback">Your browser is not supported.</span>
-                    <span slot="not-allowed" class="install-fallback">Installing is only possible over HTTPS.</span>
-                </esp-web-install-button>
+                <button type="button" id="InstallButton" class="button-primary">Install now</button>
             </div>
         </section>
     </div>
 </main>
+
+<dialog class="dialog" id="InstallDialog" aria-labelledby="InstallTitle">
+    <div data-step="confirm">
+        <h2 id="InstallTitle">Install Tactility</h2>
+        <p id="InstallSummary"></p>
+        <label class="check">
+            <input type="checkbox" id="InstallErase">
+            <span>
+                Erase the device first
+                <span class="check-sub">Recommended when installing for the first time. Deletes all data on the device.</span>
+            </span>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="button-secondary" data-close>Cancel</button>
+            <button type="button" class="button-primary" id="InstallConfirm">Install</button>
+        </div>
+    </div>
+
+    <div data-step="progress" hidden>
+        <h2>Installing</h2>
+        <p id="InstallStatus" role="status"></p>
+        <progress id="InstallBar" max="1" aria-labelledby="InstallStatus"></progress>
+        <p class="dialog-hint">Keep the device connected and this page open.</p>
+    </div>
+
+    <div data-step="result" hidden>
+        <h2 id="InstallResultTitle"></h2>
+        <p id="InstallResultText" role="status"></p>
+        <div class="dialog-actions">
+            <button type="button" class="button-secondary" id="InstallRetry">Try again</button>
+            <button type="button" class="button-primary" data-close>Close</button>
+        </div>
+    </div>
+
+    <details class="install-log">
+        <summary>Log</summary>
+        <pre id="InstallLog"></pre>
+    </details>
+</dialog>
 
 </body>
 </html>
