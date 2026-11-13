@@ -1,32 +1,38 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin')
-const CopyPlugin = require("copy-webpack-plugin");
+const { DefinePlugin } = require('webpack');
 
-module.exports = {
+const CDN_ORIGIN = 'https://cdn.tactilityproject.org';
+
+// The CDN only allows CORS from the production origin, so the dev server
+// proxies /firmware and the app uses same-origin URLs while serving.
+module.exports = (env = {}) => ({
   entry: './src/main.js',
-  mode: 'development',
-  devtool: 'inline-source-map',
+  mode: env.WEBPACK_SERVE ? 'development' : 'production',
+  devtool: env.WEBPACK_SERVE ? 'inline-source-map' : 'source-map',
   output: {
     filename: 'bundle.js',
-    path: path.resolve(__dirname, 'docs'),
+    path: path.resolve(__dirname, 'dist'),
+    clean: true,
     assetModuleFilename: 'assets/images/[name][ext]'
   },
   devServer: {
-    static: {
-      directory: path.join(__dirname, 'docs'),
-    },
     compress: false,
     port: 8080,
+    proxy: [
+      {
+        context: ['/firmware'],
+        target: CDN_ORIGIN,
+        changeOrigin: true,
+      },
+    ],
   },
   plugins: [
+    new DefinePlugin({
+      CDN_BASE_URL: JSON.stringify(env.WEBPACK_SERVE ? '' : CDN_ORIGIN),
+    }),
     new HtmlWebpackPlugin({
       template: 'src/index.html'
-    }),
-    new CopyPlugin({
-      patterns: [
-        { from: "src/CNAME", to: "./" },
-        { from: "src/.nojekyll", to: "./" }
-      ],
     }),
   ],
   module: {
@@ -41,4 +47,4 @@ module.exports = {
       }
     ]
   }
-};
+});
