@@ -1,10 +1,14 @@
 import './app.css';
 import { getUnsupportedReason, initInstallDialog, startInstall } from './install';
+import hiddenDeviceIds from './hidden-devices.json';
 
 import toolbarLogo from '../assets/images/toolbar-logo.svg';
 import '../assets/images/favicon.svg';
 
 const VERSIONS = ['stable', 'unstable'];
+
+/** Device identifiers that are never shown, even when the CDN index lists them */
+const HIDDEN_DEVICE_IDS = new Set(hiddenDeviceIds);
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,6 +48,7 @@ function mergeDevices() {
         const index = state.indexes[version];
         if (!index) continue;
         for (const build of index.devices) {
+            if (HIDDEN_DEVICE_IDS.has(build.id)) continue;
             let device = byId.get(build.id);
             if (!device) {
                 device = { id: build.id, builds: {} };

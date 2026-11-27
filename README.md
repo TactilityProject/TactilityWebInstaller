@@ -20,6 +20,16 @@ Building static files into `dist/`:
 npm run build
 ```
 
+# Hiding devices
+
+To keep devices off the website, add their identifiers to [src/hidden-devices.json](src/hidden-devices.json):
+
+```json
+["lilygo-tdeck", "m5stack-cores3"]
+```
+
+Hidden devices don't show up for any version, and links like `#lilygo-tdeck` won't select them.
+
 # Deployment
 
 Pushing to `main` builds the site and deploys it to GitHub Pages with the
