@@ -4,23 +4,22 @@ import { getUnsupportedReason, initInstallDialog, startInstall } from './install
 import toolbarLogo from '../assets/images/toolbar-logo.svg';
 import '../assets/images/favicon.svg';
 
-const VERSIONS = ['main', 'beta'];
+const VERSIONS = ['stable', 'unstable'];
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
     /** version name -> index.json content, or null when it failed to load */
     indexes: {},
-    /** merged devices: { id, vendor, name, label, haystack, words, builds: { main?, beta? } } */
+    /** merged devices: { id, vendor, name, label, haystack, words, builds: { stable?, unstable? } } */
     devices: [],
     selectedId: null,
-    preferredVersion: 'beta',
+    preferredVersion: 'unstable',
     query: '',
 };
 
 function getCdnUrl(version, path) {
-    // The CDN folders have their own names
-    const directory = version === 'beta' ? 'snapshot' : 'stable';
+    const directory = version === 'unstable' ? 'snapshot' : version;
     // CDN_BASE_URL is injected by webpack: empty (dev server proxy) when serving
     return `${CDN_BASE_URL}/firmware/${directory}/${path}`;
 }
@@ -151,9 +150,9 @@ function renderDeviceList() {
         text.append(name);
         button.append(text);
 
-        if (!device.builds.main) {
+        if (!device.builds.stable) {
             button.append(createBadge('Beta only', 'accent'));
-        } else if (!device.builds.beta) {
+        } else if (!device.builds.unstable) {
             button.append(createBadge('Main only', 'muted'));
         }
         if (device.builds[getActiveVersion(device)].incubating) {
