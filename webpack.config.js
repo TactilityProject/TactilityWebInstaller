@@ -11,7 +11,7 @@ module.exports = (env = {}) => ({
   mode: env.WEBPACK_SERVE ? 'development' : 'production',
   devtool: env.WEBPACK_SERVE ? 'inline-source-map' : 'source-map',
   output: {
-    filename: 'bundle.js',
+    filename: 'bundle.[contenthash].js',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
     assetModuleFilename: 'assets/images/[name][ext]'
