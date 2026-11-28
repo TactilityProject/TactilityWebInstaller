@@ -1,13 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="<%- language.htmlLang %>">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Web install tool for the Tactility operating system">
+    <meta name="description" content="<%- language.description %>">
     <meta name="author" content="ByteWelder / Ken Van Hoeylandt">
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/assets/images/favicon.svg">
-    <title>Tactility Web Installer</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="<%- language.title %>">
+    <meta property="og:description" content="<%- language.description %>">
+    <meta property="og:url" content="<%- siteUrl %><%- pagePath(language.code) %>">
+    <meta property="og:locale" content="<%- language.htmlLang.replace('-', '_') %>">
+    <link rel="canonical" href="<%- siteUrl %><%- pagePath(language.code) %>">
+<% for (const alternate of languages) { %>    <link rel="alternate" hreflang="<%- alternate.htmlLang %>" href="<%- siteUrl %><%- pagePath(alternate.code) %>">
+<% } %>    <link rel="alternate" hreflang="x-default" href="<%- siteUrl %>/">
+    <title><%- language.title %></title>
 </head>
 
 <body>

@@ -17,14 +17,13 @@
 const WEBSITE = 'https://tactilityproject.org';
 const STORAGE_KEY = 'language';
 
+// Language names and the page metadata (title, description), shared with webpack.config.js
 import languages from './languages.json';
 
 export const LANGUAGES = languages;
 
 const STRINGS = {
     en: {
-        title: 'Tactility Web Installer',
-        description: 'Web install tool for the Tactility operating system',
         brandSub: 'Web Installer',
         language: 'Language',
         otherInstallMethods: 'Other install methods',
@@ -85,8 +84,6 @@ const STRINGS = {
         failedText: 'Installation failed: {message} Reconnect the device and try again.',
     },
     de: {
-        title: 'Tactility Web-Installer',
-        description: 'Web-Installationstool für das Betriebssystem Tactility',
         brandSub: 'Web-Installer',
         language: 'Sprache',
         otherInstallMethods: 'Andere Installationswege',
@@ -147,8 +144,6 @@ const STRINGS = {
         failedText: 'Installation fehlgeschlagen: {message} Verbinde das Gerät erneut und versuche es noch einmal.',
     },
     es: {
-        title: 'Instalador web de Tactility',
-        description: 'Herramienta de instalación web para el sistema operativo Tactility',
         brandSub: 'Instalador web',
         language: 'Idioma',
         otherInstallMethods: 'Otras formas de instalar',
@@ -209,8 +204,6 @@ const STRINGS = {
         failedText: 'La instalación ha fallado: {message} Vuelve a conectar el dispositivo e inténtalo de nuevo.',
     },
     ja: {
-        title: 'Tactility Webインストーラー',
-        description: 'Tactilityオペレーティングシステムのためのウェブインストールツール',
         brandSub: 'Webインストーラー',
         language: '言語',
         otherInstallMethods: 'ほかのインストール方法',
@@ -271,8 +264,6 @@ const STRINGS = {
         failedText: 'インストールに失敗しました：{message} デバイスを接続し直して、もう一度お試しください。',
     },
     zh: {
-        title: 'Tactility 网页安装器',
-        description: 'Tactility 操作系统的网页安装工具',
         brandSub: '网页安装器',
         language: '语言',
         otherInstallMethods: '其他安装方式',
@@ -412,8 +403,13 @@ export function websiteUrl(path) {
  */
 export function translatePage() {
     document.documentElement.lang = getLocale();
-    document.title = t('title');
-    document.querySelector('meta[name="description"]').content = t('description');
+    const { title, description } = LANGUAGES.find((language) => language.code === current);
+    document.title = title;
+    for (const meta of document.querySelectorAll('meta[name="description"], meta[property="og:description"]')) {
+        meta.content = description;
+    }
+    document.querySelector('meta[property="og:title"]').content = title;
+    document.querySelector('meta[property="og:locale"]').content = getLocale().replace('-', '_');
     for (const element of document.querySelectorAll('[data-i18n]')) {
         element.textContent = t(element.dataset.i18n);
     }

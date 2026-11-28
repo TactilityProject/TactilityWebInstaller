@@ -1,7 +1,7 @@
 [
-    { "code": "en", "name": "English", "htmlLang": "en" },
-    { "code": "de", "name": "Deutsch", "htmlLang": "de" },
-    { "code": "es", "name": "Español", "htmlLang": "es" },
-    { "code": "ja", "name": "日本語", "htmlLang": "ja" },
-    { "code": "zh", "name": "简体中文", "htmlLang": "zh-CN" }
+    {"code": "en", "name": "English", "htmlLang": "en", "title": "Tactility Web Installer", "description": "Web install tool for the Tactility operating system"},
+    {"code": "de", "name": "Deutsch", "htmlLang": "de", "title": "Tactility Web-Installer", "description": "Web-Installationstool für das Betriebssystem Tactility"},
+    {"code": "es", "name": "Español", "htmlLang": "es", "title": "Instalador web de Tactility", "description": "Herramienta de instalación web para el sistema operativo Tactility"},
+    {"code": "ja", "name": "日本語", "htmlLang": "ja", "title": "Tactility Webインストーラー", "description": "Tactilityオペレーティングシステムのためのウェブインストールツール"},
+    {"code": "zh", "name": "简体中文", "htmlLang": "zh-CN", "title": "Tactility 网页安装器", "description": "Tactility 操作系统的网页安装工具"}
 ]
