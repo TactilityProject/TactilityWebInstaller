@@ -1,9 +1,14 @@
 /**
- * Translations of the installer. The language is, in order of priority:
- * 1. the "lang" query parameter (the translated pages of tactilityproject.org link with it, e.g. ?lang=de)
- * 2. the language picked in the language menu (remembered in localStorage)
- * 3. the first of the browser's preferred languages that is available
- * 4. English
+ * Translations of the installer. English is at the root, the other languages have their own path, e.g. /de/
+ * (see webpack.config.js).
+ * The language is, in order of priority:
+ * 1. the path, e.g. /de/
+ * 2. the "lang" query parameter (the translated pages of tactilityproject.org link with it, e.g. ?lang=de)
+ * 3. the language picked in the language menu (remembered in localStorage)
+ * 4. the first of the browser's preferred languages that is available
+ * 5. English
+ * The URL is then rewritten to the path of that language, e.g. /?lang=de#lilygo-tdeck -> /de/#lilygo-tdeck
+ * So "/" shows English only when nothing above asks for another language.
  *
  * Texts with {name} placeholders are filled in by t(key, { name: value }).
  * Texts that come from the firmware index on the CDN (device warnings and notes) are not translated.
@@ -12,13 +17,9 @@
 const WEBSITE = 'https://tactilityproject.org';
 const STORAGE_KEY = 'language';
 
-export const LANGUAGES = [
-    { code: 'en', name: 'English', htmlLang: 'en' },
-    { code: 'de', name: 'Deutsch', htmlLang: 'de' },
-    { code: 'es', name: 'Español', htmlLang: 'es' },
-    { code: 'ja', name: '日本語', htmlLang: 'ja' },
-    { code: 'zh', name: '简体中文', htmlLang: 'zh-CN' },
-];
+import languages from './languages.json';
+
+export const LANGUAGES = languages;
 
 const STRINGS = {
     en: {
@@ -352,6 +353,10 @@ function getStoredLanguage() {
 }
 
 function detectLanguage() {
+    const fromPath = location.pathname.split('/')[1];
+    if (isAvailable(fromPath)) {
+        return fromPath;
+    }
     const fromUrl = toAvailable(new URLSearchParams(location.search).get('lang'));
     if (fromUrl) {
         return fromUrl;
@@ -369,7 +374,18 @@ function detectLanguage() {
     return 'en';
 }
 
+/** Show the language in the URL: / or /<language>/, without ?lang= and keeping other parameters and the hash */
+function updateUrl() {
+    const url = new URL(location.href);
+    url.pathname = current === 'en' ? '/' : `/${current}/`;
+    url.searchParams.delete('lang');
+    if (url.href !== location.href) {
+        history.replaceState(null, '', url);
+    }
+}
+
 let current = detectLanguage();
+updateUrl();
 
 export function getLanguage() {
     return current;
@@ -432,12 +448,7 @@ export function initLanguageMenu(select, onChange) {
         } catch (error) {
             // Not remembered, e.g. in a private window
         }
-        // Drop ?lang=, so a reload keeps the language that was picked
-        const url = new URL(location.href);
-        if (url.searchParams.has('lang')) {
-            url.searchParams.delete('lang');
-            history.replaceState(null, '', url);
-        }
+        updateUrl();
         translatePage();
         onChange();
     });

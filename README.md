@@ -34,11 +34,14 @@ Hidden devices don't show up for any version, and links like `#lilygo-tdeck` won
 
 The installer is available in English, German, Spanish, Japanese and Simplified Chinese. All texts are in [src/i18n.js](src/i18n.js).
 
-The language is picked in this order:
-1. The `lang` query parameter, e.g. `https://install.tactilityproject.org/?lang=de#lilygo-tdeck`. The translated pages of tactilityproject.org link with it.
-2. The language picked in the language menu (remembered in the browser).
-3. The browser's preferred languages.
-4. English.
+English is at the root, the other languages have their own path, e.g. `https://install.tactilityproject.org/de/#lilygo-tdeck`. The language is picked in this order:
+1. The path, e.g. `/de/`. The root is English only when nothing below asks for another language.
+2. The `lang` query parameter, e.g. `https://install.tactilityproject.org/?lang=de#lilygo-tdeck`. The translated pages of tactilityproject.org link with it.
+3. The language picked in the language menu (remembered in the browser).
+4. The browser's preferred languages.
+5. English.
+
+The address then changes to the path of that language, e.g. `/?lang=de` becomes `/de/`.
 
 Device warnings and notes come from the firmware index on the CDN and are not translated.
 
