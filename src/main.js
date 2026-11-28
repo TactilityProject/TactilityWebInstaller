@@ -1,6 +1,7 @@
 import './app.css';
 import { getUnsupportedReason, initInstallDialog, startInstall } from './install';
 import hiddenDeviceIds from './hidden-devices.json';
+import { getLocale, initLanguageMenu, t, translatePage } from './i18n';
 
 import toolbarLogo from '../assets/images/toolbar-logo.svg';
 import '../assets/images/favicon.svg';
@@ -9,6 +10,9 @@ const VERSIONS = ['stable', 'unstable'];
 
 /** Device identifiers that are never shown, even when the CDN index lists them */
 const HIDDEN_DEVICE_IDS = new Set(hiddenDeviceIds);
+
+/** A Main build older than this gets a warning that recommends the Beta build */
+const STALE_MAIN_AGE_MS = 28 * 24 * 60 * 60 * 1000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,7 +23,10 @@ const state = {
     devices: [],
     selectedId: null,
     preferredVersion: 'unstable',
+    loading: false,
     query: '',
+    /** Whether the user confirmed installing an outdated Main build */
+    staleMainConfirmed: false,
 };
 
 function getCdnUrl(version, path) {
@@ -69,7 +76,7 @@ function mergeDevices() {
         device.haystack = `${text.toLowerCase()} ${squash(text)}`;
         device.words = device.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
     }
-    state.devices.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
+    state.devices.sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base', numeric: true }));
 }
 
 /**
@@ -121,6 +128,42 @@ function getActiveVersion(device) {
     return VERSIONS.find((version) => device.builds[version]);
 }
 
+/** Whether the device's Main build is outdated while a Beta build is available. */
+function isStaleMain(device, version) {
+    const created = state.indexes.stable && Date.parse(state.indexes.stable.created);
+    return version === 'stable'
+        && Boolean(device.builds.unstable)
+        && Number.isFinite(created)
+        && Date.now() - created > STALE_MAIN_AGE_MS;
+}
+
+function updateInstallButton() {
+    const device = getSelectedDevice();
+    const blockedByStaleMain = device !== null && isStaleMain(device, getActiveVersion(device)) && !state.staleMainConfirmed;
+    $('InstallButton').disabled = getUnsupportedReason() !== null || blockedByStaleMain;
+}
+
+function createStaleMainNotice() {
+    const notice = createNotice('', 'warning');
+    notice.classList.add('notice-stale');
+    const text = document.createElement('p');
+    text.textContent = t('staleMainNotice');
+    const label = document.createElement('label');
+    label.className = 'notice-check';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.staleMainConfirmed;
+    checkbox.addEventListener('change', () => {
+        state.staleMainConfirmed = checkbox.checked;
+        updateInstallButton();
+    });
+    const caption = document.createElement('span');
+    caption.textContent = t('staleMainConfirm');
+    label.append(checkbox, caption);
+    notice.append(text, label);
+    return notice;
+}
+
 function createBadge(text, kind) {
     const badge = document.createElement('span');
     badge.className = `badge badge-${kind}`;
@@ -156,12 +199,12 @@ function renderDeviceList() {
         button.append(text);
 
         if (!device.builds.stable) {
-            button.append(createBadge('Beta only', 'accent'));
+            button.append(createBadge(t('betaOnly'), 'accent'));
         } else if (!device.builds.unstable) {
-            button.append(createBadge('Main only', 'muted'));
+            button.append(createBadge(t('mainOnly'), 'muted'));
         }
         if (device.builds[getActiveVersion(device)].incubating) {
-            button.append(createBadge('Incubating', 'warning'));
+            button.append(createBadge(t('incubating'), 'warning'));
         }
 
         const item = document.createElement('li');
@@ -173,11 +216,11 @@ function renderDeviceList() {
         return; // Loading or error state owns the status text
     }
     if (devices.length === 0) {
-        status.textContent = `No devices match “${state.query.trim()}”.`;
+        status.textContent = t('noMatch', { query: state.query.trim() });
     } else if (devices.length === state.devices.length) {
-        status.textContent = `${devices.length} supported devices`;
+        status.textContent = t('deviceCount', { count: devices.length });
     } else {
-        status.textContent = `${devices.length} of ${state.devices.length} devices`;
+        status.textContent = t('deviceCountFiltered', { count: devices.length, total: state.devices.length });
     }
 }
 
@@ -192,7 +235,7 @@ function createNotice(html, kind) {
 function renderVersionLabels() {
     for (const version of VERSIONS) {
         const index = state.indexes[version];
-        document.querySelector(`[data-version-label="${version}"]`).textContent = index ? index.version : 'Unavailable';
+        document.querySelector(`[data-version-label="${version}"]`).textContent = index ? index.version : t('unavailable');
     }
 }
 
@@ -200,6 +243,7 @@ function renderDetails() {
     const device = getSelectedDevice();
     $('DetailsEmpty').hidden = device !== null;
     $('DetailsContent').hidden = device === null;
+    updateInstallButton();
     if (device === null) {
         return;
     }
@@ -215,7 +259,8 @@ function renderDetails() {
         const available = Boolean(device.builds[input.value]);
         input.disabled = !available;
         input.checked = input.value === version;
-        input.closest('.segment').title = available ? '' : `No ${input.value} build for this device`;
+        const versionName = t(input.value === 'stable' ? 'versionStable' : 'versionUnstable');
+        input.closest('.segment').title = available ? '' : t('noBuild', { version: versionName });
     }
 
     const details = $('VersionDetails');
@@ -224,13 +269,18 @@ function renderDetails() {
         const link = document.createElement('a');
         link.href = `https://github.com/ByteWelder/Tactility/commit/${index.gitCommit}`;
         link.textContent = index.gitCommit.substring(0, 7);
-        details.append(`Built on ${new Date(index.created).toLocaleString()} from commit `, link);
+        // Split the sentence around {commit}, so the link can sit anywhere in the translation
+        const [before, after = ''] = t('builtOn', { date: new Date(index.created).toLocaleString(getLocale()) }).split('{commit}');
+        details.append(before, link, after);
     }
 
     const info = $('DeviceInfo');
     info.replaceChildren();
+    if (isStaleMain(device, version)) {
+        info.append(createStaleMainNotice());
+    }
     if (build.incubating) {
-        info.append(createNotice('This device is incubating. It is not fully implemented!', 'warning'));
+        info.append(createNotice(t('incubatingNotice'), 'warning'));
     }
     if (build.warningMessage) {
         info.append(createNotice(build.warningMessage, 'warning'));
@@ -241,6 +291,9 @@ function renderDetails() {
 }
 
 function selectDevice(id) {
+    if (id !== state.selectedId) {
+        state.staleMainConfirmed = false;
+    }
     state.selectedId = id;
     for (const button of document.querySelectorAll('.device')) {
         button.setAttribute('aria-pressed', String(button.dataset.id === id));
@@ -281,17 +334,18 @@ function selectDeviceFromHash() {
 
 function showLoadError() {
     const status = $('ListStatus');
-    status.textContent = 'Failed to fetch device info. ';
+    status.textContent = `${t('loadFailed')} `;
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'button-link';
-    retry.textContent = 'Try again';
+    retry.textContent = t('tryAgain');
     retry.addEventListener('click', load);
     status.append(retry);
 }
 
 async function load() {
-    $('ListStatus').textContent = 'Loading devices…';
+    state.loading = true;
+    $('ListStatus').textContent = t('loadingDevices');
     const results = await Promise.allSettled(VERSIONS.map(fetchIndex));
     results.forEach((result, i) => {
         state.indexes[VERSIONS[i]] = result.status === 'fulfilled' ? result.value : null;
@@ -300,6 +354,7 @@ async function load() {
         }
     });
 
+    state.loading = false;
     mergeDevices();
     renderVersionLabels();
     if (state.devices.length === 0) {
@@ -310,11 +365,23 @@ async function load() {
     selectDeviceFromHash();
 }
 
+translatePage();
+initLanguageMenu($('Language'), () => {
+    if (state.loading) {
+        $('ListStatus').textContent = t('loadingDevices');
+    } else if (state.devices.length === 0) {
+        showLoadError();
+    }
+    renderVersionLabels();
+    renderDeviceList();
+    renderDetails();
+});
+
 $('NavbarImage').src = toolbarLogo;
 const unsupportedReason = getUnsupportedReason();
 $('UnsupportedNotice').hidden = unsupportedReason !== 'browser';
 $('InsecureNotice').hidden = unsupportedReason !== 'insecure';
-$('InstallButton').disabled = unsupportedReason !== null;
+updateInstallButton();
 initInstallDialog();
 
 $('InstallButton').addEventListener('click', () => {
@@ -323,10 +390,10 @@ $('InstallButton').addEventListener('click', () => {
         return;
     }
     const version = getActiveVersion(device);
-    const label = `Tactility ${state.indexes[version].version} for ${device.label}`;
+    const label = t('installLabel', { version: state.indexes[version].version, device: device.label });
     startInstall(getCdnUrl(version, `${device.id}.json`), label).catch((error) => {
         console.error(error);
-        alert(`Failed to open the serial port: ${error.message}`);
+        alert(t('openPortFailed', { message: error.message }));
     });
 });
 
@@ -353,6 +420,7 @@ $('DeviceList').addEventListener('click', (event) => {
 
 $('VersionOptions').addEventListener('change', (event) => {
     state.preferredVersion = event.target.value;
+    state.staleMainConfirmed = false;
     renderDeviceList();
     renderDetails();
 });

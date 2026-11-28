@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 const BAUDRATE = 115200;
 
 const $ = (id) => document.getElementById(id);
@@ -58,10 +60,10 @@ async function fetchOk(url) {
     try {
         response = await fetch(url);
     } catch (error) {
-        throw new InstallError(`Failed to download ${url}. Check your internet connection.`, { cause: error });
+        throw new InstallError(t('downloadFailed', { url }), { cause: error });
     }
     if (!response.ok) {
-        throw new InstallError(`Failed to download ${url} (HTTP ${response.status}).`);
+        throw new InstallError(t('downloadFailedStatus', { url, status: response.status }));
     }
     return response;
 }
@@ -80,7 +82,7 @@ async function hardReset(transport) {
 }
 
 async function flash({ port, manifestUrl }, erase) {
-    setStatus('Preparing…');
+    setStatus(t('preparing'));
     const [{ ESPLoader, Transport }, manifest] = await Promise.all([
         import('esptool-js'),
         fetchOk(manifestUrl).then((response) => response.json()),
@@ -96,25 +98,20 @@ async function flash({ port, manifestUrl }, erase) {
             resetConstructors: { hardReset: () => ({ reset: () => hardReset(transport) }) },
         });
 
-        setStatus('Connecting to the device…');
+        setStatus(t('connecting'));
         try {
             await loader.main();
         } catch (error) {
-            throw new InstallError(
-                'Failed to connect to the device. Make sure no other program is using it, '
-                + 'then try again while holding the BOOT button.',
-                { cause: error },
-            );
+            throw new InstallError(t('connectFailed'), { cause: error });
         }
 
         const chip = loader.chip.CHIP_NAME;
         const build = manifest.builds.find((candidate) => candidate.chipFamily === chip);
         if (!build) {
-            throw new InstallError(`The connected device has an ${chip} chip, which this firmware does not support. `
-                + 'Check that you selected the right device.');
+            throw new InstallError(t('wrongChip', { chip }));
         }
 
-        setStatus('Downloading firmware…');
+        setStatus(t('downloading'));
         const baseUrl = new URL(manifestUrl, location.href);
         const fileArray = await Promise.all(build.parts.map(async (part) => {
             const response = await fetchOk(new URL(part.path, baseUrl));
@@ -122,13 +119,13 @@ async function flash({ port, manifestUrl }, erase) {
         }));
 
         if (erase) {
-            setStatus('Erasing the device. This can take a minute…');
+            setStatus(t('erasing'));
             await loader.eraseFlash();
         }
 
         const totalSize = fileArray.reduce((sum, file) => sum + file.data.length, 0);
         let finishedSize = 0;
-        setStatus('Installing… 0%', 0);
+        setStatus(t('installProgress', { percent: 0 }), 0);
         await loader.writeFlash({
             fileArray,
             flashMode: 'keep',
@@ -140,14 +137,14 @@ async function flash({ port, manifestUrl }, erase) {
             reportProgress: (fileIndex, written, total) => {
                 const fileSize = fileArray[fileIndex].data.length;
                 const fraction = (finishedSize + (written / total) * fileSize) / totalSize;
-                setStatus(`Installing… ${Math.floor(fraction * 100)}%`, fraction);
+                setStatus(t('installProgress', { percent: Math.floor(fraction * 100) }), fraction);
                 if (written === total) {
                     finishedSize += fileSize;
                 }
             },
         });
 
-        setStatus('Restarting the device…');
+        setStatus(t('restarting'));
         await loader.after('hard_reset');
     } catch (error) {
         // Don't leave the device stuck in its bootloader
@@ -164,21 +161,21 @@ async function run() {
     showStep('progress');
     try {
         await flash(session, erase);
-        showResult('Installation complete', `${session.label} is installed. Your device is restarting.`, false);
+        showResult(t('complete'), t('completeText', { label: session.label }), false);
     } catch (error) {
         console.error(error);
         log(`\nError: ${error.message}\n`);
         const text = error instanceof InstallError
             ? error.message
-            : `Installation failed: ${error.message} Reconnect the device and try again.`;
-        showResult('Installation failed', text, true);
+            : t('failedText', { message: error.message });
+        showResult(t('failed'), text, true);
     } finally {
         busy = false;
     }
 }
 
 function showConfirm() {
-    $('InstallSummary').textContent = `${session.label} will be installed on the device you selected.`;
+    $('InstallSummary').textContent = t('installSummary', { label: session.label });
     showStep('confirm');
 }
 
